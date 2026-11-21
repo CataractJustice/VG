@@ -1,0 +1,1 @@
+{"components":[{"class":"MaterialPlacer","props":[{"name":"radius","value":6.0},{"name":"reach","value":50.0},{"name":"speed","value":1000.0}]}],"filepath":"./GameAssets/Items/MaterialItem.node","id":0,"localId":0,"name":"MaterialItem","nodes":[],"transform":{"P":[0.0,0.0,0.0],"R":[0.0,0.0,0.0,1.0],"S":[1.0,1.0,1.0]}}

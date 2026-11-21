@@ -1,0 +1,9 @@
+#pragma once
+#include "InventoryPackets/Types.h"
+#include "InventoryPackets/InventoryDataPacket.h"
+#include "InventoryPackets/InventoryInventoryIdPacket.h"
+#include "InventoryPackets/InventoryRequestInventoryIdPacket.h"
+#include "InventoryPackets/InventoryRequestSlotIdPacket.h"
+#include "InventoryPackets/InventorySlotDataPacket.h"
+#include "InventoryPackets/InventorySlotIdPacket.h"
+#include "InventoryPackets/InventorySlotTryMovePacket.h"

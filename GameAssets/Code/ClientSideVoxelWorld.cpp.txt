@@ -1,0 +1,138 @@
+#include "ClientSideVoxelWorld.h"
+#include "MarchingCubesVoxelMesh.h"
+#include "Graphics/Mesh/MeshRenderer.h"
+#include "GameNode/ComponentProp.h"
+#include "GameNode/ComponentFactory.h"
+#include <chrono>
+using namespace TealEngine;
+
+ClientSideVoxelWorld::ClientSideVoxelWorld() : VoxelWorld(glm::ivec3(32))
+{
+	this->addProp(new StringKeyMapValuePointerProp<Kirino::Material>(&this->chunkMaterial, &Core::materialsManager.getLoadedMap()), "Material");
+	this->addProp(new IntProp(&loadsPerFrame), "Loads per frame");
+	this->addProp(new IntProp(&renderDistance), "Render distance");
+	renderDistance = 3;
+	loadsPerFrame = 1;
+	this->chunkMaterial = nullptr;
+	this->runChunkMeshThread = true;
+	this->meshUpdateThread = std::thread([this](){
+		this->meshUpdateThreadMethod();
+	});
+}
+
+void ClientSideVoxelWorld::meshUpdateThreadMethod() 
+{
+	while(runChunkMeshThread) 
+	{
+		while(this->meshQueue.size() > 0) 
+		{
+			//lock queue
+			meshQueueMutex.lock();
+			ivec3 index = *(meshQueue.begin());
+			if (getChunk(index))
+			{
+				chunkComponents[index]->mesh->updateMesh();
+				generatedMeshQueue.push(chunkComponents[index]->mesh);
+			}
+			meshQueue.erase(meshQueue.begin());
+			//unlock queue
+			meshQueueMutex.unlock();
+		} 
+		std::this_thread::sleep_for(chrono::milliseconds(250));
+	}
+}
+
+void ClientSideVoxelWorld::loadChunk(glm::ivec3 index, VoxelData* data)
+{
+	VoxelWorld::loadChunk(index, data);
+
+	GameNode3D* chunkNode = getChunkNode(index);
+	Chunk* chunkComponent = new Chunk(getChunk(index), index, this->chunkMaterial);
+	chunkNode->attachComponent(chunkComponent);
+	this->chunkComponents[index] = chunkComponent;
+	meshQueueMutex.lock();
+	if (data->getNeighborCount() >= 26)
+		meshQueue.insert(index);
+	for (int i = -1; i <= 1; i++)
+	{
+		for (int j = -1; j <= 1; j++)
+		{
+			for (int k = -1; k <= 1; k++)
+			{
+				if (i || j || k)
+				{
+					VoxelData* neighborChunk = getChunk(index + glm::ivec3(i, j, k));
+					if (neighborChunk)
+					{
+						if (neighborChunk->getNeighborCount() >= 26)
+							meshQueue.insert(index + glm::ivec3(i, j, k));
+					}
+				}
+			}
+		}
+	}
+	meshQueueMutex.unlock();
+}
+
+void ClientSideVoxelWorld::unloadChunk(ivec3 index)
+{
+	VoxelWorld::unloadChunk(index);
+	this->chunkComponents.erase(index);
+}
+
+void ClientSideVoxelWorld::setRenderPosition(vec3 position)
+{
+	this->renderPosition = position;
+}
+
+void ClientSideVoxelWorld::update()
+{
+	for(int i = -this->renderDistance; i <= this->renderDistance; i++) 
+	{
+		for(int j = -this->renderDistance; j <= this->renderDistance; j++) 
+		{
+			for(int k = -this->renderDistance; k <= this->renderDistance; k++) 
+			{
+				glm::ivec3 chunkPosition = glm::ivec3(renderPosition / glm::vec3(this->chunkSize)) + glm::ivec3(i,j,k);
+				const auto& chunk = chunks.find(chunkPosition);
+				if(chunk == chunks.cend() && this->chunkLoadQueue.find(chunkPosition) == this->chunkLoadQueue.cend()) 
+				{
+					this->chunkLoadQueueMutex.lock();
+					this->chunkLoadQueue.emplace(chunkPosition);
+					this->chunkLoadQueueMutex.unlock();
+				}
+			}	
+		}	
+	}
+	if(generatedMeshQueue.size()) 
+	{
+		meshQueueMutex.lock();
+		generatedMeshQueue.front()->uploadMesh();
+		generatedMeshQueue.pop();
+		meshQueueMutex.unlock();
+	}
+
+	while(chunkAppendQueue.size()) 
+	{
+		chunkAppendQueueMutex.lock();
+		this->getParent()->addChild(chunkAppendQueue.front());
+		chunkAppendQueue.pop();
+		chunkAppendQueueMutex.unlock();
+	}
+}
+
+ClientSideVoxelWorld::~ClientSideVoxelWorld() 
+{
+	this->runChunkMeshThread = false;
+	this->meshUpdateThread.join();
+}
+
+void ClientSideVoxelWorld::onAttach() 
+{
+}
+
+void ClientSideVoxelWorld::onPropSet(const std::string& propName) 
+{
+}
+
+EXPORT_COMPONENT(ClientSideVoxelWorld);

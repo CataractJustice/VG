@@ -1,0 +1,1 @@
+{"components":[{"class":"Mesh3DRenderer","props":[{"name":"Shadow caster","value":false},{"name":"Render in post","value":false},{"name":"Mesh","value":"CrystalDrop.obj"},{"name":"Material","value":"MaterialDrop"}]}],"name":"mana_crystal","nodes":[],"transform":{"P":[32.0,116.05000305175781,32.0],"R":[0.0,0.0980171412229538,0.0,0.9951847195625305],"S":[0.5,0.5,0.5]},"type":"3d"}

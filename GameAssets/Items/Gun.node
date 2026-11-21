@@ -1,0 +1,1 @@
+{"components":[{"class":"Mesh3DRenderer","props":[{"name":"Shadow caster","value":true},{"name":"Material","value":"Metal"},{"name":"Mesh","value":"gun1.obj"}]}],"name":"Gun","nodes":[],"transform":{"P":[0.03999999910593033,-0.019999999552965164,0.03999999910593033],"R":[0.0,0.0,0.0,1.0],"S":[0.009999999776482582,0.009999999776482582,0.009999999776482582]},"type":"3d"}

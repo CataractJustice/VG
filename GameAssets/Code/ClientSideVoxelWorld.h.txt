@@ -1,0 +1,29 @@
+#pragma once
+#include "Graphics/Shader/ShaderProgram.h"
+
+#include "GameNode/GameNode3D.h"
+#include <queue>
+using namespace TealEngine;
+class VoxelData;
+
+class ClientSideVoxelWorld : public VoxelWorld
+{
+private:
+	std::atomic<bool> runChunkMeshThread;
+	std::thread meshUpdateThread;
+	glm::vec3 renderPosition;
+	std::queue<MarchingCubesVoxelMesh*> generatedMeshQueue;
+	int loadsPerFrame;
+	void meshUpdateThreadMethod();
+	Kirino::Material* chunkMaterial;
+
+public:
+	ClientSideVoxelWorld();
+	~ClientSideVoxelWorld();
+	void loadChunk(ivec3 index, VoxelData* data);
+	void unloadChunk(ivec3 index);
+	void setRenderPosition(vec3 position);
+	void update();
+	void onAttach() override;
+	void onPropSet(const std::string& propName) override;
+};

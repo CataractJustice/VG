@@ -1,0 +1,192 @@
+
+#include "Math/PerlinNoise.h"
+
+VoxelWorld* VoxelWorld::instance = nullptr;
+
+VoxelWorld::VoxelWorld(glm::ivec3 chunkSize)
+{
+	this->runChunkLoadThread = true;
+	chunkLoadThread = std::thread([this](){
+		this->chunkLoadThreadMethod();
+	});
+	this->chunkSize = chunkSize;
+	VoxelWorld::instance = this;
+}
+
+void VoxelWorld::chunkLoadThreadMethod() 
+{
+	while(runChunkLoadThread) 
+	{
+		while(this->chunkLoadQueue.size()) 
+		{
+			this->chunkLoadQueueMutex.lock();
+			glm::ivec3 index = *(this->chunkLoadQueue.begin());
+			this->chunkLoadQueue.erase(this->chunkLoadQueue.begin());
+			this->chunkLoadQueueMutex.unlock();
+			
+			//generate terrain here.
+			//step 1: check if voxel will have any terrain generated in it:
+			VoxelData* data = new VoxelData(this->chunkSize, index, this, ScalarFieldWrapping::NEIGHBORED_CHUNK);
+			
+			if(index.y < 0) 
+			{
+				for(int i = 0; i < chunkSize.x; i++) 
+				{
+					for(int j = 0; j < chunkSize.y; j++) 
+					{
+						for(int k = 0; k < chunkSize.z; k++) 
+						{
+							data->quickSetVoxel(glm::ivec3(i,j,k), {5, 32767});
+						}
+					}
+				}
+				goto generationDone;
+			}
+			for(int i = 0; i < chunkSize.x; i++) 
+			{
+				for(int k = 0; k < chunkSize.z; k++) 
+				{
+					float wx = index.x * chunkSize.x + i;
+					float wz = index.z * chunkSize.z + k;
+					float height = PerlinNoise::get(wx / 16.0f, wz / 16.0f, 0.0f, 8, 0.7f, 1.6f) * 8.0f;
+					float blobmult = glm::pow(PerlinNoise::get(wx / 96.0f, wz / 96.0f, 0.0f, 1), 4.0f) * 8.0f;
+					height += 32.0f;
+
+					float centerDistance = glm::length(glm::vec3((float)i,(float)0,(float)k) - glm::vec3(chunkSize.x, 0, chunkSize.z) / 2.0f);
+					for(int j = 0; j < chunkSize.y; j++) 
+					{
+						float wy = index.y * chunkSize.y + j;
+						float blobs = (PerlinNoise::get(wx/12.0f, wy/12.0f, wz/12.0f, 6, 0.7f, 1.6f) * 2.0f - 1.0f);
+						float depth = height - wy;
+						float voxelValue = depth * 0.1f + blobs * blobmult;
+						Voxel voxel;
+						voxel.voxelTypeId = depth > 10.0f ? 2 : 1;
+						voxel.amount = std::min(32767, std::max(-32768, (int)((voxelValue) * 32767.0f)));
+						data->quickSetVoxel(glm::ivec3(i,j,k), voxel);
+					}	
+				}	
+			}
+			generationDone:
+			this->loadChunk(index, data);
+		}
+		std::this_thread::sleep_for(chrono::milliseconds(50));
+	}
+}
+
+glm::ivec3 VoxelWorld::localToChunkLocal(glm::vec3 point)
+{
+	return glm::floor(point - glm::vec3(localToChunkIndex(point) * chunkSize));
+}
+
+glm::ivec3 VoxelWorld::localToChunkIndex(glm::vec3 point)
+{
+	return glm::floor(point / glm::vec3(this->chunkSize)) + sign(point) * 0.000001f;
+
+
+float VoxelWorld::getScalarFieldValueAt(glm::vec3 position) 
+{
+	glm::ivec3 chunkIndex = localToChunkIndex(position);
+	auto it = chunks.find(chunkIndex);
+	if(it == this->chunks.cend()) return -1.0f;
+	
+	return it->second.first->getInterpolatedFieldValue(position - glm::vec3(chunkIndex * chunkSize));
+}
+
+glm::vec3 VoxelWorld::getNormalAt(glm::vec3 position) 
+{
+	glm::ivec3 chunkIndex = localToChunkIndex(position);
+	auto it = chunks.find(chunkIndex);
+	if(it == this->chunks.cend()) return glm::vec3(0.0f, 1.0f, 0.0f);
+	
+	return it->second.first->getNormal(position - glm::vec3(chunkIndex * chunkSize));
+}
+
+void VoxelWorld::modifyVoxel(glm::ivec3 position, Voxel voxel, int method)
+{
+	glm::ivec3 chunkIndex = localToChunkIndex(position);
+	glm::ivec3 chunkPos = localToChunkLocal(position);
+	auto chunk = getChunk(chunkIndex);
+	if (chunk) 
+	{
+		chunk->modifyVoxel(chunkPos, voxel, method);
+		chunkComponents[chunkIndex]->needsMeshUpdate = true;
+	}
+}
+
+VoxelData* VoxelWorld::getChunk(glm::ivec3 index)
+{
+	if (chunks.find(index) != chunks.cend())
+	{
+		return chunks[index].first;
+	}
+	return nullptr;
+}
+
+GameNode3D* VoxelWorld::getChunkNode(glm::ivec3 index)
+{
+	if (chunks.find(index) != chunks.end())
+	{
+		return chunks[index].second;
+	}
+	return nullptr;
+}
+
+void VoxelWorld::loadChunk(glm::ivec3 index, VoxelData* data)
+{
+	if (chunks.find(index) == chunks.end())
+	{
+		VoxelData* newChunk = data;
+		GameNode3D* newChunkNode = new GameNode3D();
+		newChunkNode->getRelativeTransform().setPosition(glm::vec3(index.x, index.y, index.z) * glm::vec3(chunkSize.x, chunkSize.y, chunkSize.z));
+		
+		chunkAppendQueueMutex.lock();
+		chunkAppendQueue.push(newChunkNode);
+		chunkAppendQueueMutex.unlock();
+		//Update chunks neighbors:
+		for (int i = -1; i <= 1; i++)
+		{
+			for (int j = -1; j <= 1; j++)
+			{
+				for (int k = -1; k <= 1; k++)
+				{
+					VoxelData* chunk = getChunk(index + glm::ivec3(i, j, k));
+					if (chunk && !(i == 0 && j == 0 && k == 0))
+					{
+						chunk->setNeighbor(glm::ivec3(-i, -j, -k), newChunk);
+						newChunk->setNeighbor(glm::ivec3(i, j, k), chunk);
+					}
+				}
+			}
+		}
+		chunks[index] = std::pair<VoxelData*, GameNode3D*>(newChunk, newChunkNode);
+	}
+}
+
+void VoxelWorld::unloadChunk(glm::ivec3 index)
+{
+	VoxelData* delchunk = getChunk(index);
+	for (int i = -1; i <= 1; i++)
+	{
+		for (int j = -1; j <= 1; j++)
+		{
+			for (int k = -1; k <= 1; k++)
+			{
+				VoxelData* chunk = getChunk(index + glm::ivec3(i, j, k));
+				if (chunk && !(i == 0 && j == 0 && k == 0))
+				{
+					chunk->setNeighbor(glm::ivec3(-i, -j, -k), nullptr);
+				}
+			}
+		}
+	}
+	delete delchunk;
+	getChunkNode(index)->destroy();
+	chunks.erase(index);
+
+}
+
+VoxelWorld::~VoxelWorld() 
+{
+	this->runChunkLoadThread = false;
+	this->chunkLoadThread.join();
+}

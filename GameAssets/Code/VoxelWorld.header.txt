@@ -1,0 +1,47 @@
+#pragma once
+#include "GameNode/Component.h"
+#include "System/Clock.h"
+#include "System/Comparators/ivec3Comparator.h"
+#include "VoxelData.h"
+#include "Math/i3mod.h"
+#include "GameNode/GameNode3D.h"
+#include "Chunk.h"
+#include <thread>
+#include <mutex>
+#include <set>
+#include <map>
+using namespace TealEngine;
+
+class VoxelWorld : public Component
+{
+private:
+protected:
+	map<glm::ivec3, std::pair<VoxelData*, GameNode3D*>, ivec3Comparator> chunks;
+	glm::ivec3 chunkSize;
+	std::atomic<bool> runChunkLoadThread;
+	std::thread chunkLoadThread;
+	std::set<glm::ivec3, ivec3Comparator> chunkLoadQueue;	
+	std::mutex chunkLoadQueueMutex;
+	std::mutex chunkAppendQueueMutex;
+	std::queue<GameNode*> chunkAppendQueue;
+	std::set<glm::ivec3, ivec3Comparator> meshQueue;
+	std::mutex meshQueueMutex;
+	std::map<glm::ivec3, Chunk*, ivec3Comparator> chunkComponents;
+	void chunkLoadThreadMethod();
+	int renderDistance;
+	glm::vec3 loadPosition;
+
+public:
+	static VoxelWorld* instance;
+	void modifyVoxel(glm::ivec3 position, Voxel voxel, int method);
+	VoxelWorld(glm::ivec3 chunkSize);
+	~VoxelWorld();
+	glm::ivec3 localToChunkLocal(glm::vec3 point);
+	glm::ivec3 localToChunkIndex(glm::vec3 point);
+	float getScalarFieldValueAt(glm::vec3 position);
+	glm::vec3 getNormalAt(glm::vec3 position);
+	VoxelData* getChunk(glm::ivec3 index);
+	GameNode3D* getChunkNode(glm::ivec3 index);
+	virtual void loadChunk(glm::ivec3 index, VoxelData* data);
+	virtual void unloadChunk(glm::ivec3 index);
+};

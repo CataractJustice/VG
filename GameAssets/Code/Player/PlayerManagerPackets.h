@@ -1,0 +1,10 @@
+#pragma once
+#include "PlayerManagerPackets/Types.h"
+#include "PlayerManagerPackets/Authentification.h"
+#include "PlayerManagerPackets/Movement.h"
+#include "PlayerManagerPackets/PlayerSave.h"
+#include "PlayerManagerPackets/PlayerSaveRequest.h"
+#include "PlayerManagerPackets/EquippSlot.h"
+#include "PlayerManagerPackets/SlotInfo.h"
+#include "PlayerManagerPackets/UseItem.h"
+#include "PlayerManagerPackets/Craft.h"
